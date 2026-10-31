@@ -1,9 +1,10 @@
 name: Build and publish Docker image
 
+# Builds and publishes on every push to main. Version tags (v*) are handled by
+# release.yml instead, so they are not built twice.
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   workflow_dispatch:
 
 concurrency:
@@ -44,8 +45,6 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,format=short
             type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
 
       - name: Build and push
         uses: docker/build-push-action@v6

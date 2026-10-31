@@ -94,6 +94,27 @@ To onboard a user: set their `intervals_athlete_id` (e.g. `i123456`) and
 `intervals_api_key` attributes in the Keycloak admin console (Users → *user* →
 Attributes). The API key comes from intervals.icu → Settings → Developer.
 
+## Releasing
+
+Two workflows handle CI/CD:
+
+- [`docker-publish`](.github/workflows/docker-publish.yml) — on every push to
+  `main`, builds and pushes `ghcr.io/<owner>/intervalsicu-mcp` tagged `latest`
+  and with the short commit SHA.
+- [`release`](.github/workflows/release.yml) — on a pushed version tag, builds
+  the image, tags it `latest` and with the version number, and creates a GitHub
+  Release with auto-generated notes.
+
+Cut a release by pushing a semver tag:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+This publishes `…:1.0.0`, `…:1.0`, `…:1`, and `…:latest`, and opens a GitHub
+Release for `v1.0.0`.
+
 ## Development
 
 ```bash
