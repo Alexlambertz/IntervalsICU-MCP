@@ -93,3 +93,36 @@ class IntervalsClient:
 
     async def get_activity(self, activity_id: str, api_key: str) -> Any:
         return await self._request(f"/activity/{activity_id}", api_key)
+
+    async def get_streams(
+        self,
+        activity_id: str,
+        api_key: str,
+        types: list[str] | None = None,
+    ) -> dict[str, list[Any]]:
+        """Return per-sample streams as {stream_type: [values]}.
+
+        Most streams are a flat list in "data". The latlng stream is special:
+        intervals.icu puts latitude in "data" and longitude in a parallel
+        "data2", so it is zipped back into [lat, lon] pairs here.
+        """
+        params = {"types": ",".join(types)} if types else None
+        raw = await self._request(
+            f"/activity/{activity_id}/streams", api_key, params=params
+        )
+        out: dict[str, list[Any]] = {}
+        for stream in raw:
+            data = stream.get("data") or []
+            data2 = stream.get("data2")
+            if data2:
+                out[stream["type"]] = [
+                    [a, b] if a is not None and b is not None else None
+                    for a, b in zip(data, data2)
+                ]
+            else:
+                out[stream["type"]] = data
+        return out
+
+    async def get_intervals(self, activity_id: str, api_key: str) -> Any:
+        """Return the activity's detected intervals / laps analysis."""
+        return await self._request(f"/activity/{activity_id}/intervals", api_key)

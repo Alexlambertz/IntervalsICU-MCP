@@ -17,6 +17,8 @@ call intervals.icu on the user's behalf.
 |---|---|
 | `list_activities(oldest, newest)` | Activities between two ISO dates |
 | `get_activity(activity_id)` | Full detail for one activity |
+| `get_activity_streams(activity_id, block_seconds=60, types?)` | Detailed per-sample time-series (power, HR, speed, cadence, altitude, GPS, …) aggregated into fixed-length time blocks, with derived headwind and watts-per-heartbeat and activity-level weather |
+| `get_activity_intervals(activity_id)` | Detected intervals / laps analysis (per-effort power, HR, cadence, …) |
 | `get_wellness(oldest, newest)` | Daily wellness / recovery records |
 | `list_events(oldest, newest)` | Calendar events / planned workouts |
 | `get_athlete()` | Profile, FTP and training zones |

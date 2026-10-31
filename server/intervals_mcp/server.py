@@ -11,6 +11,7 @@ from mcp.server.mcpserver import MCPServer
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from .aggregation import summarise_activity_streams
 from .auth import KeycloakTokenVerifier
 from .config import Settings
 from .intervals import IntervalsClient, IntervalsError
@@ -107,6 +108,53 @@ async def list_events(oldest: str, newest: str) -> list[dict[str, Any]]:
     athlete_id, api_key = _credentials()
     try:
         return await intervals.list_events(athlete_id, api_key, oldest, newest)
+    except IntervalsError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+
+@mcp.tool(
+    description=(
+        "Get detailed per-sample time-series for one activity, aggregated into "
+        "fixed-length time blocks (default 60s) so the result stays compact. Each "
+        "block carries average/max power, average/max heart rate, speed (km/h), "
+        "cadence, torque, cumulative distance, elevation gain, altitude, "
+        "temperature, direction of travel, the headwind component (m/s, "
+        "positive=head), and watts-per-heartbeat (cardiac drift). Also returns "
+        "activity context and activity-level weather. Use a larger block_seconds "
+        "(e.g. 300) for long activities. Optionally restrict `types` to specific "
+        "streams (e.g. ['watts','heartrate'])."
+    )
+)
+async def get_activity_streams(
+    activity_id: str,
+    block_seconds: int = 60,
+    types: list[str] | None = None,
+) -> dict[str, Any]:
+    if block_seconds < 1:
+        raise RuntimeError("block_seconds muss mindestens 1 sein.")
+    _athlete_id, api_key = _credentials()
+    try:
+        activity = await intervals.get_activity(activity_id, api_key)
+        streams = await intervals.get_streams(activity_id, api_key, types)
+    except IntervalsError as exc:
+        raise RuntimeError(str(exc)) from exc
+    try:
+        return summarise_activity_streams(activity, streams, block_seconds)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+
+@mcp.tool(
+    description=(
+        "Get the activity's detected intervals / laps analysis (per-interval "
+        "duration, power, heart rate, cadence, speed, etc.) — a compact, "
+        "structured breakdown of the efforts within an activity."
+    )
+)
+async def get_activity_intervals(activity_id: str) -> dict[str, Any]:
+    _athlete_id, api_key = _credentials()
+    try:
+        return await intervals.get_intervals(activity_id, api_key)
     except IntervalsError as exc:
         raise RuntimeError(str(exc)) from exc
 

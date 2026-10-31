@@ -194,12 +194,16 @@ Für jeden eingehenden Request:
 | Tool | Zweck | intervals.icu-Endpunkt |
 |---|---|---|
 | `list_activities` | Aktivitäten in einem Zeitraum auflisten | `GET /athlete/{id}/activities` |
-| `get_activity` | Details/Streams einer Aktivität | `GET /athlete/{id}/activities/{actId}` |
+| `get_activity` | Zusammenfassung/Detail einer Aktivität | `GET /activity/{actId}` |
+| `get_activity_streams` | Detaillierte Zeitreihen (Power, HF, Speed, Cadence, Höhe, GPS …), aggregiert in Zeitblöcke inkl. abgeleiteter Headwind-/W-pro-HF-Werte und Wetter | `GET /activity/{actId}/streams` + `GET /activity/{actId}` |
+| `get_activity_intervals` | Erkannte Intervalle/Runden (Power, HF, Cadence je Abschnitt) | `GET /activity/{actId}/intervals` |
 | `get_wellness` | Wellness-/Recovery-Daten (HRV, Ruhepuls, Gewicht …) | `GET /athlete/{id}/wellness` |
 | `list_events` | Geplante Workouts / Kalender | `GET /athlete/{id}/events` |
 | `get_athlete` | Profil, FTP/Zonen | `GET /athlete/{id}` |
 
 Die `athlete_id` kommt **immer** aus dem Token, nie als Tool-Parameter — so kann ein Nutzer nicht die Daten eines anderen Athleten anfragen.
+
+**Zeitreihen / Streams:** Die Rohdaten (~1 Sample/Sekunde) sind für einen LLM-Kontext zu groß. `get_activity_streams` aggregiert sie serverseitig in Zeitblöcke (Default 60 s, über `block_seconds` einstellbar) und liefert je Block Mittel-/Maxwerte sowie abgeleitete Signale (Fahrtrichtung, Gegenwindanteil, Watt/Herzschlag). Optional lassen sich einzelne Stream-Typen über `types` einschränken.
 
 ### 6.4 Fehlerbehandlung
 - `401` bei fehlendem/ungültigem Token (mit `WWW-Authenticate` + Metadata-Pointer).
