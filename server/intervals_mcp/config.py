@@ -27,6 +27,11 @@ class Settings:
     athlete_claim: str
     apikey_claim: str
 
+    # --- OAuth scopes advertised in protected-resource metadata + required on
+    #     tokens. Advertising a concrete list keeps MCP clients from falling
+    #     back to the authorization server's full scope catalog. ---
+    scopes: tuple[str, ...]
+
     # --- intervals.icu API ---
     intervals_base_url: str
 
@@ -43,6 +48,9 @@ class Settings:
             resource_url=_env("MCP_RESOURCE_URL", required=True).rstrip("/"),
             athlete_claim=_env("ATHLETE_CLAIM", "intervals_athlete_id"),
             apikey_claim=_env("APIKEY_CLAIM", "intervals_api_key"),
+            scopes=tuple(
+                s for s in _env("MCP_SCOPES", "openid").replace(",", " ").split() if s
+            ),
             intervals_base_url=_env(
                 "INTERVALS_BASE_URL", "https://intervals.icu/api/v1"
             ).rstrip("/"),

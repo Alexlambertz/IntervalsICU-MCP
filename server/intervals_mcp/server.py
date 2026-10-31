@@ -32,7 +32,9 @@ mcp = MCPServer(
     auth=AuthSettings(
         issuer_url=settings.oidc_issuer,  # published in protected-resource metadata
         resource_server_url=settings.resource_url,
-        required_scopes=None,
+        # Advertised as `scopes_supported`; bounds what MCP clients request so
+        # they don't fall back to the authorization server's full scope catalog.
+        required_scopes=list(settings.scopes),
         validate_token_resource=False,  # audience is validated inside the verifier
     ),
 )

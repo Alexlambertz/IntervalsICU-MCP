@@ -28,6 +28,9 @@ services:
       # --- Claim names carrying the intervals.icu credentials (Variant 1) ---
       ATHLETE_CLAIM: ${ATHLETE_CLAIM:-intervals_athlete_id}
       APIKEY_CLAIM: ${APIKEY_CLAIM:-intervals_api_key}
+      # --- OAuth scopes advertised to clients (keeps Claude from requesting
+      #     the whole realm scope catalog). Space/comma separated. ---
+      MCP_SCOPES: ${MCP_SCOPES:-openid}
       # --- intervals.icu API base URL ---
       INTERVALS_BASE_URL: ${INTERVALS_BASE_URL:-https://intervals.icu/api/v1}
       # --- Transport (container-internal; keep 0.0.0.0:8000) ---
