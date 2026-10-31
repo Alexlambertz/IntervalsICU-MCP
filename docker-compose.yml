@@ -13,8 +13,8 @@
 services:
   mcp-server:
     build: ./server
-    # Or pin a prebuilt image instead of building:
-    # image: ghcr.io/alexlambertz/intervals-icu-mcp:latest
+    # Or use the image published by the GitHub Actions workflow instead of building:
+    # image: ghcr.io/alexlambertz/intervalsicu-mcp:latest
     restart: unless-stopped
     ports:
       - "${MCP_PORT:-8000}:8000"

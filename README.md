@@ -51,6 +51,14 @@ docker compose up -d --build
 The container serves plain HTTP on `${MCP_PORT:-8000}` at path `/mcp`. Front it
 with your TLS-terminating proxy and expose it at `MCP_RESOURCE_URL`.
 
+A prebuilt image is published to GHCR on every push to `main` by the
+[`docker-publish`](.github/workflows/docker-publish.yml) workflow. To use it
+instead of building locally, set in `docker-compose.yml`:
+
+```yaml
+    image: ghcr.io/alexlambertz/intervalsicu-mcp:latest
+```
+
 Required environment:
 
 | Variable | Example | Meaning |
