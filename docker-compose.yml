@@ -1,0 +1,42 @@
+# Production deployment: ONLY the intervals.icu MCP server.
+#
+# Use this when Keycloak (and TLS termination / reverse proxy) are already
+# provided by your existing infrastructure. The container serves plain HTTP on
+# $MCP_PORT; put it behind your own TLS-terminating proxy and expose it publicly
+# at $MCP_RESOURCE_URL.
+#
+# For a self-contained local stack (Keycloak + Postgres + Caddy + MCP) use
+# docker-compose.dev.yml instead.
+#
+# Required env (see .env.example): OIDC_ISSUER, MCP_RESOURCE_URL.
+
+services:
+  mcp-server:
+    build: ./server
+    # Or pin a prebuilt image instead of building:
+    # image: ghcr.io/alexlambertz/intervals-icu-mcp:latest
+    restart: unless-stopped
+    ports:
+      - "${MCP_PORT:-8000}:8000"
+    environment:
+      # --- Your existing Keycloak realm (issuer) ---
+      OIDC_ISSUER: ${OIDC_ISSUER:?set OIDC_ISSUER, e.g. https://auth.example.com/realms/intervals}
+      # --- Public URL this server is reachable at (behind your proxy/TLS) ---
+      MCP_RESOURCE_URL: ${MCP_RESOURCE_URL:?set MCP_RESOURCE_URL, e.g. https://mcp.example.com}
+      # --- Must match the Keycloak audience mapper on the claude-mcp client ---
+      MCP_AUDIENCE: ${MCP_AUDIENCE:-intervals-mcp-server}
+      # --- Claim names carrying the intervals.icu credentials (Variant 1) ---
+      ATHLETE_CLAIM: ${ATHLETE_CLAIM:-intervals_athlete_id}
+      APIKEY_CLAIM: ${APIKEY_CLAIM:-intervals_api_key}
+      # --- intervals.icu API base URL ---
+      INTERVALS_BASE_URL: ${INTERVALS_BASE_URL:-https://intervals.icu/api/v1}
+      # --- Transport (container-internal; keep 0.0.0.0:8000) ---
+      HOST: 0.0.0.0
+      PORT: "8000"
+      MCP_PATH: ${MCP_PATH:-/mcp}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

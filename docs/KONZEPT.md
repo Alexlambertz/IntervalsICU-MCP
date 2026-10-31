@@ -1,6 +1,6 @@
 # Konzept: intervals.icu MCP-Server mit Keycloak-Authentifizierung
 
-> Status: Entwurf · Stand: 2026-10-31
+> Status: Umgesetzt (Variante 1) · Stand: 2026-10-31
 > Ziel: Einen MCP-Server bereitstellen, der die intervals.icu-API für Claude (und andere MCP-Clients) zugänglich macht. Die Authentifizierung läuft über einen eigenen Keycloak-Server; **Athlete ID** und **API Key** werden jeweils als Keycloak-Benutzerattribut hinterlegt und an den MCP-Server übergeben. Betrieb als Docker-Container via `docker-compose`.
 
 ---
@@ -170,7 +170,7 @@ Damit enthält das Access Token (JWT) nach dem Login u. a.:
 }
 ```
 
-> ⚠️ **Sicherheitshinweis:** Das Ablegen des API-Keys direkt im Access Token ist bequem, bedeutet aber, dass ein Geheimnis in jedem Request mitgeschickt und potenziell in Logs landet. Siehe [Abschnitt 8](#8-sicherheitsüberlegungen) für die empfohlene Alternative (Server holt das Attribut serverseitig über die Keycloak Admin-API; nur `athlete_id` bleibt im Token). Der Nutzer-Wunsch „Übergabe per Attribut" wird in beiden Varianten erfüllt — der Unterschied ist nur, **wo** das Attribut gelesen wird.
+> ✅ **Gewählte Variante (Variante 1 / umgesetzt):** Beide Werte liegen als Claims direkt im Access Token. Das ist der direkte Weg der gewünschten Attribut-Übergabe und in dieser Codebasis implementiert. Bewusst in Kauf genommen: der API-Key (ein Geheimnis) wird in jedem Request mitgeschickt und kann theoretisch in Logs landen — daher kurze Token-Lebensdauer, kein Logging von Tokens und HTTPS-only (siehe [Abschnitt 8](#8-sicherheitsüberlegungen)). Die in Abschnitt 8 beschriebene Alternative (serverseitiger Abruf über die Keycloak Admin-API) bleibt als spätere Option dokumentiert.
 
 ---
 
@@ -210,7 +210,11 @@ Die `athlete_id` kommt **immer** aus dem Token, nie als Tool-Parameter — so ka
 
 ## 7. Deployment (docker-compose)
 
-### 7.1 Services
+Es gibt zwei Compose-Dateien:
+- **`docker-compose.yml` (Produktiv):** nur der MCP-Container. Keycloak und TLS/Reverse-Proxy stellt die vorhandene Infrastruktur. Benötigt `OIDC_ISSUER` (bestehender Keycloak-Realm) und `MCP_RESOURCE_URL`.
+- **`docker-compose.dev.yml` (lokal / all-in-one):** zusätzlich Keycloak + Postgres + Caddy, importiert den Realm aus `keycloak/realm-export.json`.
+
+### 7.1 Services (all-in-one, dev)
 ```yaml
 services:
   reverse-proxy:

@@ -1,0 +1,74 @@
+services:
+  reverse-proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      AUTH_DOMAIN: ${AUTH_DOMAIN}
+      MCP_DOMAIN: ${MCP_DOMAIN}
+    depends_on:
+      - keycloak
+      - mcp-server
+
+  keycloak-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD}
+    volumes:
+      - kc_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    command: ["start", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      KC_HOSTNAME: ${AUTH_DOMAIN}
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+
+  mcp-server:
+    build: ./server
+    restart: unless-stopped
+    environment:
+      OIDC_ISSUER: https://${AUTH_DOMAIN}/realms/intervals
+      MCP_AUDIENCE: intervals-mcp-server
+      MCP_RESOURCE_URL: https://${MCP_DOMAIN}
+      INTERVALS_BASE_URL: https://intervals.icu/api/v1
+      ATHLETE_CLAIM: intervals_athlete_id
+      APIKEY_CLAIM: intervals_api_key
+      HOST: 0.0.0.0
+      PORT: "8000"
+      MCP_PATH: /mcp
+    depends_on:
+      - keycloak
+
+volumes:
+  kc_db_data:
+  caddy_data:
+  caddy_config:

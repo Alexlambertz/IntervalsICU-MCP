@@ -1,0 +1,11 @@
+# Automatic HTTPS via Let's Encrypt. Caddy obtains and renews certificates
+# for both domains as long as they resolve to this host and ports 80/443 are
+# reachable from the internet.
+
+{$AUTH_DOMAIN} {
+	reverse_proxy keycloak:8080
+}
+
+{$MCP_DOMAIN} {
+	reverse_proxy mcp-server:8000
+}
