@@ -203,6 +203,8 @@ Für jeden eingehenden Request:
 
 Die `athlete_id` kommt **immer** aus dem Token, nie als Tool-Parameter — so kann ein Nutzer nicht die Daten eines anderen Athleten anfragen.
 
+**Schreibende Tools:** Zusätzlich zu den Lese-Tools gibt es 60 Tools für alle Create-/Update-/Delete-Operationen der intervals.icu-API (Aktivitäten, Kalender-Events, Wellness, Workout-Bibliothek, Ordner/Pläne, Gear, Athleten-/Sport-Einstellungen, Custom Items; Details im README). Bodies sind freie Objekte; `get_write_schema` liefert die Feldreferenz aus der OpenAPI-Spec. Bewusst nicht enthalten: Chats, Multi-Athleten-Pläne (`/athlete-plans`), `/disconnect-app` und reine Download-/Konvertierungs-Endpunkte. Schutzmaßnahmen: MCP-Annotations (`destructiveHint` bei Löschungen), Pflicht-Datumsgrenzen bei Bereichsoperationen, Validierung von IDs/Daten/Uploads vor jedem Request und der Schalter `MCP_READ_ONLY=true`, der gar keine Schreib-Tools registriert.
+
 **Zeitreihen / Streams:** Die Rohdaten (~1 Sample/Sekunde) sind für einen LLM-Kontext zu groß. `get_activity_streams` aggregiert sie serverseitig in Zeitblöcke (Default 60 s, über `block_seconds` einstellbar) und liefert je Block Mittel-/Maxwerte sowie abgeleitete Signale (Fahrtrichtung, Gegenwindanteil, Watt/Herzschlag). Optional lassen sich einzelne Stream-Typen über `types` einschränken.
 
 ### 6.4 Fehlerbehandlung

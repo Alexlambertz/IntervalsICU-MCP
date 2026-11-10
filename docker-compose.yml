@@ -31,6 +31,12 @@ services:
       # --- OAuth scopes advertised to clients (keeps Claude from requesting
       #     the whole realm scope catalog). Space/comma separated. ---
       MCP_SCOPES: ${MCP_SCOPES:-openid}
+      # --- Write access: set MCP_READ_ONLY=true to not expose ANY create/update/
+      #     delete tools (the model then cannot change your intervals.icu data). ---
+      MCP_READ_ONLY: ${MCP_READ_ONLY:-false}
+      # Max decoded size of file uploads (base64 travels inside the MCP request,
+      # whose body is capped at 4 MiB by the SDK).
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-3145728}
       # --- intervals.icu API base URL ---
       INTERVALS_BASE_URL: ${INTERVALS_BASE_URL:-https://intervals.icu/api/v1}
       # --- Transport (container-internal; keep 0.0.0.0:8000) ---

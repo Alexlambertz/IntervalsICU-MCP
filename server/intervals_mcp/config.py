@@ -32,6 +32,12 @@ class Settings:
     #     back to the authorization server's full scope catalog. ---
     scopes: tuple[str, ...]
 
+    # --- Write access ---
+    read_only: bool
+    """When true, no write/delete tools are registered at all."""
+    max_upload_bytes: int
+    """Upper bound for decoded file uploads (base64 travels inside the MCP request)."""
+
     # --- intervals.icu API ---
     intervals_base_url: str
 
@@ -54,6 +60,8 @@ class Settings:
             intervals_base_url=_env(
                 "INTERVALS_BASE_URL", "https://intervals.icu/api/v1"
             ).rstrip("/"),
+            read_only=_env("MCP_READ_ONLY", "false").lower() in {"1", "true", "yes", "on"},
+            max_upload_bytes=int(_env("MAX_UPLOAD_BYTES", str(3 * 1024 * 1024))),
             host=_env("HOST", "0.0.0.0"),
             port=int(_env("PORT", "8000")),
             mcp_path=_env("MCP_PATH", "/mcp"),

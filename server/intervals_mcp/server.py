@@ -8,6 +8,7 @@ from typing import Any
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -15,6 +16,7 @@ from .aggregation import summarise_activity_streams
 from .auth import KeycloakTokenVerifier
 from .config import Settings
 from .intervals import IntervalsClient, IntervalsError
+from .write_tools import register_write_tools
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("intervals_mcp")
@@ -41,7 +43,7 @@ mcp = MCPServer(
 )
 
 
-class CredentialsMissing(Exception):
+class CredentialsMissing(ToolError):
     """The access token lacks the intervals.icu attributes."""
 
 
@@ -71,7 +73,7 @@ async def list_activities(oldest: str, newest: str) -> list[dict[str, Any]]:
     try:
         return await intervals.list_activities(athlete_id, api_key, oldest, newest)
     except IntervalsError as exc:
-        raise RuntimeError(str(exc)) from exc
+        raise ToolError(str(exc)) from exc
 
 
 @mcp.tool(
@@ -82,7 +84,7 @@ async def get_activity(activity_id: str) -> dict[str, Any]:
     try:
         return await intervals.get_activity(activity_id, api_key)
     except IntervalsError as exc:
-        raise RuntimeError(str(exc)) from exc
+        raise ToolError(str(exc)) from exc
 
 
 @mcp.tool(
@@ -96,7 +98,7 @@ async def get_wellness(oldest: str, newest: str) -> list[dict[str, Any]]:
     try:
         return await intervals.get_wellness(athlete_id, api_key, oldest, newest)
     except IntervalsError as exc:
-        raise RuntimeError(str(exc)) from exc
+        raise ToolError(str(exc)) from exc
 
 
 @mcp.tool(
@@ -109,7 +111,7 @@ async def list_events(oldest: str, newest: str) -> list[dict[str, Any]]:
     try:
         return await intervals.list_events(athlete_id, api_key, oldest, newest)
     except IntervalsError as exc:
-        raise RuntimeError(str(exc)) from exc
+        raise ToolError(str(exc)) from exc
 
 
 @mcp.tool(
@@ -131,17 +133,17 @@ async def get_activity_streams(
     types: list[str] | None = None,
 ) -> dict[str, Any]:
     if block_seconds < 1:
-        raise RuntimeError("block_seconds muss mindestens 1 sein.")
+        raise ToolError("block_seconds muss mindestens 1 sein.")
     _athlete_id, api_key = _credentials()
     try:
         activity = await intervals.get_activity(activity_id, api_key)
         streams = await intervals.get_streams(activity_id, api_key, types)
     except IntervalsError as exc:
-        raise RuntimeError(str(exc)) from exc
+        raise ToolError(str(exc)) from exc
     try:
         return summarise_activity_streams(activity, streams, block_seconds)
     except ValueError as exc:
-        raise RuntimeError(str(exc)) from exc
+        raise ToolError(str(exc)) from exc
 
 
 @mcp.tool(
@@ -156,7 +158,7 @@ async def get_activity_intervals(activity_id: str) -> dict[str, Any]:
     try:
         return await intervals.get_intervals(activity_id, api_key)
     except IntervalsError as exc:
-        raise RuntimeError(str(exc)) from exc
+        raise ToolError(str(exc)) from exc
 
 
 @mcp.tool(
@@ -167,7 +169,11 @@ async def get_athlete() -> dict[str, Any]:
     try:
         return await intervals.get_athlete(athlete_id, api_key)
     except IntervalsError as exc:
-        raise RuntimeError(str(exc)) from exc
+        raise ToolError(str(exc)) from exc
+
+
+# Write tools (create/update/delete). Skipped entirely when MCP_READ_ONLY is set.
+WRITE_TOOL_COUNT = register_write_tools(mcp, intervals, _credentials, settings)
 
 
 @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
@@ -177,11 +183,12 @@ async def healthz(_request: Request) -> JSONResponse:
 
 def main() -> None:
     logger.info(
-        "Starting intervals.icu MCP server on %s:%s%s (issuer=%s)",
+        "Starting intervals.icu MCP server on %s:%s%s (issuer=%s, write tools: %s)",
         settings.host,
         settings.port,
         settings.mcp_path,
         settings.oidc_issuer,
+        WRITE_TOOL_COUNT if not settings.read_only else "disabled (MCP_READ_ONLY)",
     )
     mcp.run(
         transport="streamable-http",

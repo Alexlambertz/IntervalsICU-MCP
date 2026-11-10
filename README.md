@@ -26,6 +26,48 @@ call intervals.icu on the user's behalf.
 The athlete is fixed by the login — tools never accept an athlete id, so a user
 can only ever reach their own data.
 
+### Write tools
+
+60 tools cover the intervals.icu write API (generated against the official OpenAPI
+spec). Bodies are free-form objects, because the intervals.icu schemas are huge
+(Activity: 184 fields, Athlete: 164) — call **`get_write_schema(name, search?)`** to
+look up valid field names, types and enum values (e.g. `get_write_schema("Wellness",
+"sleep")`).
+
+| Area | Tools |
+|---|---|
+| **Activities** | `update_activity`, `delete_activity`, `delete_activity_tombstone`, `create_manual_activity`, `create_manual_activities_bulk`, `upload_activity_file`¹, `replace_activity_file`¹, `add_activity_comment`, `update_activity_streams`, `update_activity_streams_csv`, `update_activity_intervals`, `update_activity_interval`, `delete_activity_intervals`, `split_activity_interval` |
+| **Calendar events** | `create_event`, `create_events_bulk`, `update_event`, `update_events_in_range`, `delete_event`, `delete_events_in_range`, `delete_events_bulk`, `mark_event_done`, `duplicate_events`, `apply_plan`, `apply_plan_changes` |
+| **Wellness** | `update_wellness`, `update_wellness_bulk`, `upload_wellness_csv` |
+| **Workout library** | `create_workout`, `create_workouts_bulk`, `update_workout`, `delete_workout`, `update_plan_workouts`, `duplicate_workouts`, `import_workout_file`¹ |
+| **Folders / plans** | `create_folder`, `update_folder`, `delete_folder`, `update_folder_shared_with`, `share_folder_with_me` |
+| **Gear** | `create_gear`, `update_gear`, `delete_gear`, `replace_gear`, `create_gear_reminder`, `update_gear_reminder`, `delete_gear_reminder` |
+| **Athlete / settings** | `update_athlete`, `create_sport_settings`, `update_sport_settings`, `update_sport_settings_multi`, `delete_sport_settings`, `update_weather_config`, `update_training_plan`, `update_route` |
+| **Custom items** | `create_custom_item`, `update_custom_item`, `delete_custom_item`, `reorder_custom_items`, `upload_custom_item_image`¹ |
+
+¹ File content is passed base64-encoded (`content_base64`); limit `MAX_UPLOAD_BYTES`
+(default 3 MiB, the MCP request body is capped at 4 MiB).
+
+**Safety**
+- Every write tool carries MCP annotations (`readOnlyHint=false`, and
+  `destructiveHint=true` for deletes and range operations), so MCP clients can ask
+  for confirmation. Delete tools say so in their description.
+- Range operations (`delete_events_in_range`, `update_events_in_range`) require both
+  dates — the API's default "everything in the future" is deliberately not exposed.
+- IDs are validated as single URL path segments (no `../` redirection to other
+  endpoints), dates as ISO dates, uploads as valid base64 within the size limit —
+  all before any request is sent.
+- Set **`MCP_READ_ONLY=true`** to run a read-only deployment: no write tool is
+  registered at all, so the model cannot change data even if asked to.
+
+**Deliberately not exposed:** chats/messaging (`/chats/*`, would message other
+people), `/athlete-plans` (multi-athlete coach operation), `/disconnect-app` (would
+revoke the access this server uses), the `download-workout*` / `download-fit-files`
+conversions (downloads, not writes) and the duplicate `PUT /athlete/{id}/wellness`.
+
+The field reference lives in `server/intervals_mcp/write_schemas.json` and is
+regenerated from the live spec with `python scripts/gen_write_schemas.py`.
+
 ## Architecture
 
 ```
@@ -70,6 +112,9 @@ Required environment:
 | `MCP_AUDIENCE` | `intervals-mcp-server` | Must match the Keycloak audience mapper |
 | `ATHLETE_CLAIM` / `APIKEY_CLAIM` | `intervals_athlete_id` / `intervals_api_key` | Claim names |
 | `INTERVALS_BASE_URL` | `https://intervals.icu/api/v1` | intervals.icu API base |
+| `MCP_SCOPES` | `openid` | OAuth scopes advertised to clients |
+| `MCP_READ_ONLY` | `false` | `true` = register no write/delete tools |
+| `MAX_UPLOAD_BYTES` | `3145728` | Max decoded size of file uploads |
 
 ### Local / all-in-one (`docker-compose.dev.yml`)
 
