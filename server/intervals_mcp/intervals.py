@@ -144,6 +144,12 @@ class IntervalsClient:
             {"oldest": oldest, "newest": newest},
         )
 
+    async def list_folders(self, athlete_id: str, api_key: str) -> Any:
+        return await self._get(f"/athlete/{seg(athlete_id)}/folders", api_key)
+
+    async def list_workouts(self, athlete_id: str, api_key: str) -> Any:
+        return await self._get(f"/athlete/{seg(athlete_id)}/workouts", api_key)
+
     # --- activity-scoped reads ---
 
     async def get_activity(self, activity_id: str, api_key: str) -> Any:

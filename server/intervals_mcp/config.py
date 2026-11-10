@@ -35,6 +35,9 @@ class Settings:
     # --- Write access ---
     read_only: bool
     """When true, no write/delete tools are registered at all."""
+    advanced_writes: bool
+    """When true, the advanced/rarely-needed write tools are registered as well.
+    Off by default: only the core planning/logging tools are exposed."""
     max_upload_bytes: int
     """Upper bound for decoded file uploads (base64 travels inside the MCP request)."""
 
@@ -61,6 +64,8 @@ class Settings:
                 "INTERVALS_BASE_URL", "https://intervals.icu/api/v1"
             ).rstrip("/"),
             read_only=_env("MCP_READ_ONLY", "false").lower() in {"1", "true", "yes", "on"},
+            advanced_writes=_env("MCP_ENABLE_ADVANCED_WRITES", "false").lower()
+            in {"1", "true", "yes", "on"},
             max_upload_bytes=int(_env("MAX_UPLOAD_BYTES", str(3 * 1024 * 1024))),
             host=_env("HOST", "0.0.0.0"),
             port=int(_env("PORT", "8000")),

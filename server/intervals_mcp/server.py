@@ -9,6 +9,7 @@ from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -172,8 +173,64 @@ async def get_athlete() -> dict[str, Any]:
         raise ToolError(str(exc)) from exc
 
 
-# Write tools (create/update/delete). Skipped entirely when MCP_READ_ONLY is set.
-WRITE_TOOL_COUNT = register_write_tools(mcp, intervals, _credentials, settings)
+# Keys of a folder worth showing. `children` (every workout inside) and `shareToken`
+# (a sharing secret) are deliberately left out: the list stays compact and leaks nothing.
+_FOLDER_KEYS = (
+    "id", "name", "type", "description", "num_workouts", "start_date_local",
+    "duration_weeks", "visibility", "canEdit",
+)
+_WORKOUT_KEYS = (
+    "id", "folder_id", "name", "type", "description", "moving_time",
+    "icu_training_load", "icu_intensity", "distance", "indoor", "tags", "day", "days",
+)
+
+
+@mcp.tool(
+    description=(
+        "List the athlete's workout library folders and training plans (id, name, type, "
+        "description, number of workouts, ...). Use the folder id with create_workout "
+        "or list_workouts. The workouts inside a folder are not included."
+    ),
+    annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
+)
+async def list_folders() -> list[dict[str, Any]]:
+    athlete_id, api_key = _credentials()
+    try:
+        folders = await intervals.list_folders(athlete_id, api_key)
+    except IntervalsError as exc:
+        raise ToolError(str(exc)) from exc
+    return [{k: f[k] for k in _FOLDER_KEYS if f.get(k) is not None} for f in folders]
+
+
+@mcp.tool(
+    description=(
+        "List workouts in the athlete's workout library, optionally only those of one "
+        "folder/plan (folder_id from list_folders). Includes the workout description "
+        "(the step text). Capped at `limit` results (default 100)."
+    ),
+    annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
+)
+async def list_workouts(folder_id: int | None = None, limit: int = 100) -> dict[str, Any]:
+    athlete_id, api_key = _credentials()
+    try:
+        workouts = await intervals.list_workouts(athlete_id, api_key)
+    except IntervalsError as exc:
+        raise ToolError(str(exc)) from exc
+    if folder_id is not None:
+        workouts = [w for w in workouts if w.get("folder_id") == folder_id]
+    shown = workouts[: max(1, limit)]
+    return {
+        "total": len(workouts),
+        "returned": len(shown),
+        "workouts": [{k: w[k] for k in _WORKOUT_KEYS if w.get(k) is not None} for w in shown],
+    }
+
+
+# Write tools (create/update/delete). Which ones are active depends on MCP_READ_ONLY
+# (none) and MCP_ENABLE_ADVANCED_WRITES (core only vs. everything).
+WRITE_TOOLS_ACTIVE, WRITE_TOOLS_HIDDEN = register_write_tools(
+    mcp, intervals, _credentials, settings
+)
 
 
 @mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
@@ -182,13 +239,22 @@ async def healthz(_request: Request) -> JSONResponse:
 
 
 def main() -> None:
+    if settings.read_only:
+        write_info = "disabled (MCP_READ_ONLY)"
+    else:
+        write_info = (
+            f"{WRITE_TOOLS_ACTIVE} active, {WRITE_TOOLS_HIDDEN} advanced hidden "
+            "(MCP_ENABLE_ADVANCED_WRITES=true to enable)"
+            if WRITE_TOOLS_HIDDEN
+            else f"{WRITE_TOOLS_ACTIVE} active (advanced enabled)"
+        )
     logger.info(
         "Starting intervals.icu MCP server on %s:%s%s (issuer=%s, write tools: %s)",
         settings.host,
         settings.port,
         settings.mcp_path,
         settings.oidc_issuer,
-        WRITE_TOOL_COUNT if not settings.read_only else "disabled (MCP_READ_ONLY)",
+        write_info,
     )
     mcp.run(
         transport="streamable-http",

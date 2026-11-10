@@ -21,32 +21,49 @@ call intervals.icu on the user's behalf.
 | `get_activity_intervals(activity_id)` | Detected intervals / laps analysis (per-effort power, HR, cadence, …) |
 | `get_wellness(oldest, newest)` | Daily wellness / recovery records |
 | `list_events(oldest, newest)` | Calendar events / planned workouts |
-| `get_athlete()` | Profile, FTP and training zones |
+| `get_athlete()` | Profile, FTP and training zones (incl. sport settings) |
+| `list_folders()` | Workout library folders and plans |
+| `list_workouts(folder_id?, limit=100)` | Workouts in the library, optionally of one folder |
 
 The athlete is fixed by the login — tools never accept an athlete id, so a user
 can only ever reach their own data.
 
 ### Write tools
 
-60 tools cover the intervals.icu write API (generated against the official OpenAPI
-spec). Bodies are free-form objects, because the intervals.icu schemas are huge
-(Activity: 184 fields, Athlete: 164) — call **`get_write_schema(name, search?)`** to
-look up valid field names, types and enum values (e.g. `get_write_schema("Wellness",
-"sleep")`).
+Writing is split into two tiers so the model is only offered what it actually needs.
+
+**Core (enabled by default)** — what a training assistant does day to day:
 
 | Area | Tools |
 |---|---|
-| **Activities** | `update_activity`, `delete_activity`, `delete_activity_tombstone`, `create_manual_activity`, `create_manual_activities_bulk`, `upload_activity_file`¹, `replace_activity_file`¹, `add_activity_comment`, `update_activity_streams`, `update_activity_streams_csv`, `update_activity_intervals`, `update_activity_interval`, `delete_activity_intervals`, `split_activity_interval` |
-| **Calendar events** | `create_event`, `create_events_bulk`, `update_event`, `update_events_in_range`, `delete_event`, `delete_events_in_range`, `delete_events_bulk`, `mark_event_done`, `duplicate_events`, `apply_plan`, `apply_plan_changes` |
-| **Wellness** | `update_wellness`, `update_wellness_bulk`, `upload_wellness_csv` |
-| **Workout library** | `create_workout`, `create_workouts_bulk`, `update_workout`, `delete_workout`, `update_plan_workouts`, `duplicate_workouts`, `import_workout_file`¹ |
-| **Folders / plans** | `create_folder`, `update_folder`, `delete_folder`, `update_folder_shared_with`, `share_folder_with_me` |
-| **Gear** | `create_gear`, `update_gear`, `delete_gear`, `replace_gear`, `create_gear_reminder`, `update_gear_reminder`, `delete_gear_reminder` |
-| **Athlete / settings** | `update_athlete`, `create_sport_settings`, `update_sport_settings`, `update_sport_settings_multi`, `delete_sport_settings`, `update_weather_config`, `update_training_plan`, `update_route` |
-| **Custom items** | `create_custom_item`, `update_custom_item`, `delete_custom_item`, `reorder_custom_items`, `upload_custom_item_image`¹ |
+| **Calendar / planning** | `create_event`, `create_events_bulk`, `update_event`, `delete_event`, `mark_event_done` |
+| **Workout library** | `create_workout`, `update_workout`, `delete_workout`, `create_folder` (find folder ids with the read tool `list_folders`) |
+| **Logging** | `update_wellness`, `update_activity`, `create_manual_activity` |
+| **Thresholds** | `update_sport_settings` (e.g. new FTP / LTHR / zones after a test) |
+| **Reference** | `get_write_schema` — valid field names, types and enums |
+
+`create_event` is the quickest way to plan a workout (it lands on the calendar);
+`create_workout` stores a reusable one in the library.
+
+**Advanced (hidden unless `MCP_ENABLE_ADVANCED_WRITES=true`)** — 47 more tools that
+are rarely needed, riskier, or awkward for a model:
+
+| Area | Tools |
+|---|---|
+| Activities | `delete_activity`, `delete_activity_tombstone`, `create_manual_activities_bulk`, `upload_activity_file`¹, `replace_activity_file`¹, `add_activity_comment`, `update_activity_streams`, `update_activity_streams_csv`, `update_activity_intervals`, `update_activity_interval`, `delete_activity_intervals`, `split_activity_interval` |
+| Calendar | `update_events_in_range`, `delete_events_in_range`, `delete_events_bulk`, `duplicate_events`, `apply_plan`, `apply_plan_changes` |
+| Wellness | `update_wellness_bulk`, `upload_wellness_csv` |
+| Library / plans | `create_workouts_bulk`, `update_plan_workouts`, `duplicate_workouts`, `import_workout_file`¹, `update_folder`, `delete_folder`, `update_folder_shared_with`, `share_folder_with_me` |
+| Gear | `create_gear`, `update_gear`, `delete_gear`, `replace_gear`, `create_gear_reminder`, `update_gear_reminder`, `delete_gear_reminder` |
+| Athlete / settings | `update_athlete`, `create_sport_settings`, `update_sport_settings_multi`, `delete_sport_settings`, `update_weather_config`, `update_training_plan`, `update_route` |
+| Custom items | `create_custom_item`, `update_custom_item`, `delete_custom_item`, `reorder_custom_items`, `upload_custom_item_image`¹ |
 
 ¹ File content is passed base64-encoded (`content_base64`); limit `MAX_UPLOAD_BYTES`
 (default 3 MiB, the MCP request body is capped at 4 MiB).
+
+Bodies are free-form objects, because the intervals.icu schemas are huge (Activity:
+184 fields, Athlete: 164) — call `get_write_schema(name, search?)` to look up valid
+fields, e.g. `get_write_schema("Wellness", "sleep")`.
 
 **Safety**
 - Every write tool carries MCP annotations (`readOnlyHint=false`, and
@@ -57,8 +74,9 @@ look up valid field names, types and enum values (e.g. `get_write_schema("Wellne
 - IDs are validated as single URL path segments (no `../` redirection to other
   endpoints), dates as ISO dates, uploads as valid base64 within the size limit —
   all before any request is sent.
-- Set **`MCP_READ_ONLY=true`** to run a read-only deployment: no write tool is
-  registered at all, so the model cannot change data even if asked to.
+- **Tiers:** by default only the core tools exist. `MCP_ENABLE_ADVANCED_WRITES=true`
+  adds the advanced ones; `MCP_READ_ONLY=true` removes every write tool (and wins over
+  the advanced switch). Tools that are not registered are not advertised to the model.
 
 **Deliberately not exposed:** chats/messaging (`/chats/*`, would message other
 people), `/athlete-plans` (multi-athlete coach operation), `/disconnect-app` (would
@@ -113,7 +131,8 @@ Required environment:
 | `ATHLETE_CLAIM` / `APIKEY_CLAIM` | `intervals_athlete_id` / `intervals_api_key` | Claim names |
 | `INTERVALS_BASE_URL` | `https://intervals.icu/api/v1` | intervals.icu API base |
 | `MCP_SCOPES` | `openid` | OAuth scopes advertised to clients |
-| `MCP_READ_ONLY` | `false` | `true` = register no write/delete tools |
+| `MCP_ENABLE_ADVANCED_WRITES` | `false` | `true` = also register the 47 advanced write tools |
+| `MCP_READ_ONLY` | `false` | `true` = register no write/delete tools at all |
 | `MAX_UPLOAD_BYTES` | `3145728` | Max decoded size of file uploads |
 
 ### Local / all-in-one (`docker-compose.dev.yml`)

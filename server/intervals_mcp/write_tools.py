@@ -5,8 +5,11 @@ token, never from a tool argument. Bodies are passed through as free-form object
 because the intervals.icu schemas are large (Activity: 184 fields, Athlete: 164);
 call ``get_write_schema`` to look up the valid field names, types and enum values.
 
-Registration is skipped entirely when ``MCP_READ_ONLY`` is set, so a read-only
-deployment does not even advertise these tools.
+Registration is tiered:
+  * ``MCP_READ_ONLY=true``              -> no write tool at all
+  * default                             -> the core tools in ``CORE_WRITE_TOOLS``
+  * ``MCP_ENABLE_ADVANCED_WRITES=true`` -> additionally every advanced tool
+Tools that are not registered are not advertised to the model.
 
 Deliberately NOT exposed:
   * chats / messaging (``/chats/*``)    — sends messages to other people
@@ -36,6 +39,36 @@ from .intervals import IntervalsClient, IntervalsError, seg
 Fields = dict[str, Any]
 Records = list[dict[str, Any]]
 
+# Write tools that are exposed by default: what an AI training assistant actually
+# does day to day — plan and adjust the calendar, create workouts, log wellness,
+# annotate activities, update thresholds after a test.
+#
+# Every OTHER write tool is "advanced" and only registered when
+# MCP_ENABLE_ADVANCED_WRITES=true. They are rarely needed, riskier, or awkward for a
+# model: binary file uploads via base64, rewriting raw stream data, range/bulk
+# deletions, gear, custom items, sharing, plan management, athlete-wide settings.
+CORE_WRITE_TOOLS = frozenset(
+    {
+        # calendar / planning
+        "create_event",
+        "create_events_bulk",
+        "update_event",
+        "delete_event",
+        "mark_event_done",
+        # workout library (create_workout needs a folder -> list_folders)
+        "create_workout",
+        "update_workout",
+        "delete_workout",
+        "create_folder",
+        # logging
+        "update_wellness",
+        "update_activity",
+        "create_manual_activity",
+        # thresholds / zones (e.g. new FTP after a test)
+        "update_sport_settings",
+    }
+)
+
 _SCHEMA_FILE = Path(__file__).with_name("write_schemas.json")
 
 
@@ -64,19 +97,35 @@ def register_write_tools(
     intervals: IntervalsClient,
     credentials: Callable[[], tuple[str, str]],
     settings: Settings,
-) -> int:
-    """Register all write tools on ``mcp``. Returns the number registered."""
+) -> tuple[int, int]:
+    """Register the write tools on ``mcp``.
+
+    Returns ``(registered, hidden)``: how many write tools are active, and how many
+    advanced ones were left out because MCP_ENABLE_ADVANCED_WRITES is off.
+    With MCP_READ_ONLY nothing is registered and ``(0, 0)`` is returned.
+    """
     if settings.read_only:
-        return 0
+        return 0, 0
 
     schemas = _load_schemas()
     count = 0
+    hidden = 0
+    seen: set[str] = set()
 
     # ------------------------------------------------------------------ helpers
 
     def tool(name: str, description: str, kind: str):
-        """Register a tool. kind: 'create' | 'update' | 'delete' (drives MCP hints)."""
-        nonlocal count
+        """Register a tool. kind: 'create' | 'update' | 'delete' (drives MCP hints).
+
+        Advanced tools (not in CORE_WRITE_TOOLS) are skipped unless
+        MCP_ENABLE_ADVANCED_WRITES is set; the function is still defined but never
+        registered, so it is not advertised to the model.
+        """
+        nonlocal count, hidden
+        seen.add(name)
+        if name not in CORE_WRITE_TOOLS and not settings.advanced_writes:
+            hidden += 1
+            return lambda fn: fn
         count += 1
         return mcp.tool(
             name=name,
@@ -130,11 +179,10 @@ def register_write_tools(
         description=(
             "Look up the valid field names, types and enum values for the free-form "
             "`fields`/`events`/`records` objects accepted by the write tools. Call "
-            "without `name` to list the available schemas (Activity, EventEx, Wellness, "
-            "WorkoutEx, Folder, Gear, GearReminder, SportSettings, AthleteUpdateDTO, "
-            "CustomItem, Interval, ...). Pass `name` to get all fields of one schema, "
-            "optionally narrowed with `search` (case-insensitive substring of the field "
-            "name)."
+            "without `name` to list the available schemas (e.g. EventEx for calendar "
+            "events, WorkoutEx for library workouts, Wellness, Activity, SportSettings). "
+            "Pass `name` to get all fields of one schema, optionally narrowed with "
+            "`search` (case-insensitive substring of the field name)."
         ),
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
     )
@@ -538,9 +586,11 @@ def register_write_tools(
 
     @tool(
         "create_workout",
-        "Create a workout in the workout library (a folder or plan). Needs folder_id, "
-        "name, type, and the steps in `description` (workout text syntax) or a file via "
-        "file_contents(_base64)+filename. See get_write_schema('WorkoutEx').",
+        "Create a workout in the workout library (a folder or plan). Needs folder_id "
+        "(find or create one with list_folders / create_folder), name, type, and the "
+        "steps in `description` (workout text syntax) or a file via "
+        "file_contents(_base64)+filename. To put a workout straight onto the calendar "
+        "instead, use create_event. See get_write_schema('WorkoutEx').",
         "create",
     )
     async def create_workout(fields: Fields) -> Any:
@@ -829,4 +879,9 @@ def register_write_tools(
             files=file_part(filename, decode_file(content_base64)),
         )
 
-    return count
+    # Guard against typos in CORE_WRITE_TOOLS silently hiding a tool.
+    unknown = CORE_WRITE_TOOLS - seen
+    if unknown:
+        raise RuntimeError(f"CORE_WRITE_TOOLS names no such tool: {sorted(unknown)}")
+
+    return count + 1, hidden  # +1: get_write_schema
